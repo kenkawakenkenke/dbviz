@@ -3,13 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="author" content="[YOUR_NAME_HERE]" />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#000000" />
     <meta name="description" content="ドラゴンボールのアニメと漫画の進行ペースを比較するインタラクティブグラフ。各エピソードのペースを視覚的に分析し、詳細を探索。" />
     <meta name="keywords" content="ドラゴンボール, アニメ, 漫画, 進行ペース, 比較, グラフ, D3.js, 可視化, Dragon Ball, Anime, Manga, Pace, Comparison, Graph, Visualization" />
+    
+    <!-- Open Graph / Facebook -->
     <meta property="og:title" content="ドラゴンボール：アニメ vs 漫画 進行グラフ" />
     <meta property="og:description" content="ドラゴンボールのアニメと漫画の進行ペースを比較するインタラクティブグラフ。各エピソードのペースを視覚的に分析し、詳細を探索。" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="[YOUR_PAGE_URL_HERE]" />
+    <meta property="og:url" content="https://kenkawakenkenke.github.io/dbviz/" />
+    <meta property="og:image" content="https://kenkawakenkenke.github.io/dbviz/og_image.png" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@kenkawakenkenke" />
+    <meta name="twitter:creator" content="@kenkawakenkenke" />
+    <meta name="twitter:title" content="ドラゴンボール：アニメ vs 漫画 進行グラフ" />
+    <meta name="twitter:description" content="ドラゴンボールのアニメと漫画の進行ペースを比較するインタラクティブグラフ。各エピソードのペースを視覚的に分析し、詳細を探索。" />
+    <meta name="twitter:image" content="https://kenkawakenkenke.github.io/dbviz/twitter_image.png" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://kenkawakenkenke.github.io/dbviz/" />
+
+    <!-- Favicon -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
     <title>ドラゴンボール アニメ vs 漫画 進行グラフ</title>
+    
+    <!-- Preconnect for faster loading of external resources -->
+    <link rel="preconnect" href="https://d3js.org">
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link
@@ -89,7 +117,7 @@
     <div class="title-container">
       <h1 class="main-title">ドラゴンボール アニメ vs 漫画 進行グラフ</h1>
       <p class="subtitle">
-        アニメと漫画の進行ペースを視覚的に比較。グラフの点にカーソルを合わせると、各エピソードの詳細が表示されます。点の色は物語の進行速度を示しており、青色は遅く（アニメオリジナル回）、赤色は速いペースを表します。
+        このグラフは、ドラゴンボールのアニメエピソードと対応する漫画の章を視覚的に比較します。点をクリックすると、各エピソードの詳細が表示され、アニメと漫画の進行ペース（青色は遅く、赤色は速い）を色の変化で確認できます。
       </p>
     </div>
 
@@ -215,8 +243,9 @@
 
         const maxPace = d3.max(mergedData, (d) => d.pace);
         const colorScale = d3
-          .scaleSequential(d3.interpolateTurbo)
-          .domain([0, maxPace]);
+          .scaleSequential()
+          .domain([0, maxPace]) // Input domain is the pace values
+          .interpolator(d => d3.interpolateTurbo(0.2 + d * 0.8)); // Map 0-1 normalized input to 0.2-1 for interpolateTurbo
 
         // Legend elements (moved inside SVG)
         const legendGroup = svg
