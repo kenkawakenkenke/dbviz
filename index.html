@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="ドラゴンボールのアニメと漫画の進行ペースを比較するインタラクティブグラフ。各エピソードのペースを視覚的に分析し、詳細を探索。" />
+    <meta name="keywords" content="ドラゴンボール, アニメ, 漫画, 進行ペース, 比較, グラフ, D3.js, 可視化, Dragon Ball, Anime, Manga, Pace, Comparison, Graph, Visualization" />
+    <meta property="og:title" content="ドラゴンボール：アニメ vs 漫画 進行グラフ" />
+    <meta property="og:description" content="ドラゴンボールのアニメと漫画の進行ペースを比較するインタラクティブグラフ。各エピソードのペースを視覚的に分析し、詳細を探索。" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="[YOUR_PAGE_URL_HERE]" />
+    <title>ドラゴンボール アニメ vs 漫画 進行グラフ</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&display=swap&font-display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Yuji Syuku", serif;
+        background-color: #000;
+        color: #fff;
+        overflow-x: hidden;
+      }
+
+      .tooltip h3 {
+        margin-top: 0;
+        font-size: 16px;
+        color: #db5a1a;
+      }
+      .tooltip-section {
+        margin-top: 8px;
+        border-top: 1px solid #eee;
+        padding-top: 8px;
+      }
+      .chart-container {
+        position: relative;
+        width: 100%;
+        max-width: 1200px;
+        margin: auto;
+      }
+      svg {
+        width: 100%;
+        height: auto;
+      }
+      .grid-line {
+        stroke: #444;
+        stroke-dasharray: 2, 2;
+      }
+      .axis-label,
+      .series-label {
+        font-size: 1.1rem;
+        fill: #fefefe;
+      }
+      .saga-label {
+        font-size: 0.9rem; /* Increased font size */
+        fill: #a0a0a0;
+        text-anchor: start;
+      }
+      .saga-line {
+        stroke: #a0a0a0;
+        stroke-width: 1;
+        stroke-dasharray: 3, 3;
+      }
+      .title-container {
+        text-align: center;
+        padding: 2rem 1rem;
+      }
+      .main-title {
+        font-size: 3rem;
+        font-weight: bold;
+        color: #ffcc00;
+        text-shadow: 2px 2px 4px #db5a1a;
+        margin-bottom: 0.5rem;
+      }
+      .subtitle {
+        font-size: 1.2rem;
+        color: #eee;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .dot {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body class="bg-black text-white">
+    <div class="title-container">
+      <h1 class="main-title">ドラゴンボール アニメ vs 漫画 進行グラフ</h1>
+      <p class="subtitle">
+        アニメと漫画の進行ペースを視覚的に比較。グラフの点にカーソルを合わせると、各エピソードの詳細が表示されます。点の色は物語の進行速度を示しており、青色は遅く（アニメオリジナル回）、赤色は速いペースを表します。
+      </p>
+    </div>
+
+    <div id="chart" class="chart-container p-4"></div>
+    <div
+      id="info-panel"
+      class="bg-gray-800 p-4 rounded-lg shadow-lg mx-auto max-w-4xl"
+      style="margin-top: 10px; height: 300px; overflow-y: auto"
+    ></div>
+
+    <script>
+      async function loadData() {
+        try {
+          const dbmainRes = await fetch("./dbmain.json");
+          if (!dbmainRes.ok) {
+            throw new Error(`HTTP error! status: ${dbmainRes.status}`);
+          }
+          const dbmainData = await dbmainRes.json();
+
+        const mangaChapterMap = new Map();
+        dbmainData.volumes.forEach((volume) => {
+          volume.chapters.forEach((chapter) => {
+            mangaChapterMap.set(chapter.chapter_number, chapter);
+          });
+        });
+
+        // Merge anime episode data with corresponding manga chapter data.
+        // This involves finding the manga chapters covered by each anime episode
+        // and determining a manga chapter number for plotting purposes.
+        let mergedData = dbmainData.anime_episodes
+          .map((animeEpisode, index, array) => {
+            // Get manga chapters covered by the current anime episode
+            const mangaChapters = animeEpisode.manga_chapters_covered
+              .map((chapNum) => mangaChapterMap.get(chapNum))
+              .filter(Boolean);
+
+            let mangaChapterNumForPlot = null;
+            // If manga chapters are directly covered, use the first one for plotting
+            if (mangaChapters.length > 0) {
+              mangaChapterNumForPlot = mangaChapters[0].chapter_number;
+            } else {
+              // If no manga chapters are directly covered (anime original),
+              // find the last manga chapter covered by a previous anime episode
+              // to maintain continuity on the graph.
+              for (let j = index - 1; j >= 0; j--) {
+                const prevAnimeEpisode = array[j];
+                if (prevAnimeEpisode.manga_chapters_covered.length > 0) {
+                  mangaChapterNumForPlot = mangaChapterMap.get(
+                    prevAnimeEpisode.manga_chapters_covered[
+                      prevAnimeEpisode.manga_chapters_covered.length - 1
+                    ]
+                  ).chapter_number;
+                  break;
+                }
+              }
+            }
+
+            return {
+              animeEpisode: {
+                episode_number: animeEpisode.episode_number,
+                title: animeEpisode.title,
+                summary: animeEpisode.summary,
+              },
+              mangaChapters: mangaChapters,
+              justification: animeEpisode.justification,
+              mangaChapterNumForPlot: mangaChapterNumForPlot,
+            };
+          })
+          .filter(
+            (item) => item.animeEpisode && item.mangaChapterNumForPlot !== null
+          );
+
+        // Calculate the 'pace' of manga chapters covered per anime episode.
+        // This is a rolling average over a defined window size.
+        const windowSize = 5;
+        mergedData.forEach((d, i) => {
+          if (i < windowSize) {
+            d.pace = 0; // Pace is 0 for initial episodes where window is not full
+            return;
+          }
+          const prevMangaNum =
+            mergedData[i - windowSize].mangaChapterNumForPlot;
+          const currentMangaNum = d.mangaChapterNumForPlot;
+          d.pace = (currentMangaNum - prevMangaNum) / windowSize;
+        });
+
+        return { mergedData, dbmainData };
+        } catch (error) {
+          console.error("Error loading data:", error);
+          // Optionally display an error message to the user
+          d3.select("#chart").append("p").text("データの読み込み中にエラーが発生しました。ページをリロードしてください。").style("color", "red");
+          return { mergedData: [], dbmainData: { volumes: [], anime_episodes: [] } }; // Return empty data to prevent further errors
+        }
+      }
+
+      function drawChart(mergedData, dbmainData) {
+        const margin = { top: 40, right: 40, bottom: 80, left: 60 };
+        const container = d3.select("#chart");
+        const containerWidth = container.node().getBoundingClientRect().width;
+        const width = containerWidth - margin.left - margin.right;
+        const height = containerWidth * 0.6 - margin.top - margin.bottom;
+
+        const svg = container
+          .append("svg")
+          .attr(
+            "viewBox",
+            `0 0 ${width + margin.left + margin.right} ${
+              height + margin.top + margin.bottom
+            }`
+          )
+          .append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const x = d3
+          .scaleLinear()
+          .domain([0, d3.max(mergedData, (d) => d.animeEpisode.episode_number)])
+          .range([0, width]);
+
+        const y = d3
+          .scaleLinear()
+          .domain([0, d3.max(mergedData, (d) => d.mangaChapterNumForPlot)])
+          .range([height, 0]);
+
+        const maxPace = d3.max(mergedData, (d) => d.pace);
+        const colorScale = d3
+          .scaleSequential(d3.interpolateTurbo)
+          .domain([0, maxPace]);
+
+        // Legend elements (moved inside SVG)
+        const legendGroup = svg
+          .append("g")
+          .attr("class", "legend-group")
+          .attr("transform", `translate(10, 30)`); // Position in top-left corner, pushed down further
+
+        legendGroup
+          .append("text")
+          .attr("x", 0)
+          .attr("y", 0)
+          .attr("dy", "-0.1em")
+          .style("font-size", "0.9rem")
+          .style("fill", "#fefefe")
+          .text("進行ペース");
+
+        const legendWidth = 100;
+        const legendHeight = 15;
+
+        const defs = legendGroup.append("defs");
+        const linearGradient = defs
+          .append("linearGradient")
+          .attr("id", "legend-gradient")
+          .attr("x1", "0%")
+          .attr("y1", "0%")
+          .attr("x2", "100%")
+          .attr("y2", "0%");
+
+        linearGradient
+          .selectAll("stop")
+          .data(d3.range(0, 1.01, 0.1))
+          .enter()
+          .append("stop")
+          .attr("offset", (d) => `${d * 100}%`)
+          .attr("stop-color", (d) => colorScale(d * maxPace));
+
+        legendGroup
+          .append("rect")
+          .attr("x", 0)
+          .attr("y", 5) // Position below the title
+          .attr("width", legendWidth)
+          .attr("height", legendHeight)
+          .style("fill", "url(#legend-gradient)")
+          .style("stroke", "#555")
+          .style("stroke-width", "1px");
+
+        legendGroup
+          .append("text")
+          .attr("x", 0)
+          .attr("y", 5 + legendHeight + 5) // Position below the gradient bar with more space
+          .style("font-size", "0.8rem")
+          .style("fill", "#fefefe")
+          .text("遅い");
+
+        legendGroup
+          .append("text")
+          .attr("x", legendWidth)
+          .attr("y", 5 + legendHeight + 5)
+          .attr("text-anchor", "end")
+          .style("font-size", "0.8rem")
+          .style("fill", "#fefefe")
+          .text("速い");
+
+        svg
+          .append("g")
+          .attr("class", "grid")
+          .call(d3.axisLeft(y).ticks(10).tickSize(-width).tickFormat(""))
+          .selectAll("line")
+          .attr("class", "grid-line");
+
+        const xAxis = d3.axisBottom(x);
+        const yAxis = d3.axisLeft(y);
+
+        const xAxisGroup = svg
+          .append("g")
+          .attr("transform", `translate(0,${height})`)
+          .call(xAxis)
+          .attr("color", "#fefefe");
+
+        svg.append("g").call(yAxis).attr("color", "#fefefe");
+
+        svg
+          .append("text")
+          .attr("text-anchor", "middle")
+          .attr("x", width / 2)
+          .attr("y", height + margin.bottom - 35)
+          .attr("class", "axis-label")
+          .text("アニメ話数");
+        svg
+          .append("text")
+          .attr("text-anchor", "middle")
+          .attr("transform", "rotate(-90)")
+          .attr("y", -margin.left + 20)
+          .attr("x", -height / 2)
+          .attr("class", "axis-label")
+          .text("漫画話数");
+
+        // Define sagas and their starting episode numbers.
+        const sagas = [
+          { name: "第22回天下一武道会", episode: 19 },
+          { name: "RR軍編", episode: 30 },
+          { name: "第23回天下一武道会", episode: 84 },
+          { name: "ピッコロ大魔王編", episode: 102 },
+          { name: "サイヤ人編", episode: 154 },
+          { name: "ナメック星編", episode: 195 },
+          { name: "人造人間・セル編", episode: 271 },
+          { name: "魔人ブウ編", episode: 353 },
+        ];
+
+        const labelHeight = 15; // Approximate height of a saga label
+        const labelPadding = 5; // Padding between labels
+        const occupiedYPositions = []; // To store {x, y, width, height} of placed labels to prevent collisions
+
+        // Iterate through each saga to draw its line and label.
+        sagas.forEach((saga) => {
+          const sagaX = x(saga.episode);
+          let currentYOffset = -25; // Start with the highest possible position for the label
+
+          // Find a non-colliding Y position for the current saga label.
+          // This loop tries different Y offsets until no collision is detected with previously placed labels.
+          let collisionDetected = true;
+          while (collisionDetected) {
+            collisionDetected = false;
+            // Define the bounding box for the current label at the current Y offset.
+            const currentLabelRect = {
+              x: sagaX,
+              y: currentYOffset,
+              width: saga.name.length * 7, // Estimate width based on character count (rough approximation)
+              height: labelHeight,
+            };
+
+            // Check for collisions with all previously placed labels.
+            for (const occupied of occupiedYPositions) {
+              // Check for X-axis overlap: [start1 < end2 && end1 > start2]
+              const xOverlap =
+                currentLabelRect.x < occupied.x + occupied.width + labelPadding &&
+                currentLabelRect.x + currentLabelRect.width + labelPadding >
+                  occupied.x;
+
+              // Check for Y-axis overlap: [start1 < end2 && end1 > start2]
+              const yOverlap =
+                currentLabelRect.y < occupied.y + occupied.height + labelPadding &&
+                currentLabelRect.y + currentLabelRect.height + labelPadding >
+                  occupied.y;
+
+              // If both X and Y axes overlap, a collision is detected.
+              if (xOverlap && yOverlap) {
+                collisionDetected = true;
+                currentYOffset += labelHeight + labelPadding; // Move the current label down to avoid collision
+                break; // Break from inner loop and try a new Y offset
+              }
+            }
+          }
+
+          // Add the current label's final position to the list of occupied positions.
+          occupiedYPositions.push({
+            x: sagaX,
+            y: currentYOffset,
+            width: saga.name.length * 7,
+            height: labelHeight,
+          });
+
+          // Append the vertical line for the saga.
+          svg
+            .append("line")
+            .attr("class", "saga-line")
+            .attr("x1", sagaX)
+            .attr("x2", sagaX)
+            .attr("y1", currentYOffset + labelHeight / 2) // Adjust line start to be near the label
+            .attr("y2", height); // Extend to the bottom of the chart
+
+          // Append the text label for the saga.
+          svg
+            .append("text")
+            .attr("class", "saga-label")
+            .attr("x", sagaX)
+            .attr("y", currentYOffset)
+            .text(saga.name);
+        });
+
+        // Define the line generator for the main progression line.
+        const line = d3
+          .line()
+          .x((d) => x(d.animeEpisode.episode_number))
+          .y((d) => y(d.mangaChapterNumForPlot))
+          .curve(d3.curveMonotoneX); // Use monotone curve for smoother transitions
+
+        // Append the main progression line to the SVG.
+        svg
+          .append("path")
+          .datum(mergedData)
+          .attr("fill", "none")
+          .attr("stroke", "#777")
+          .attr("stroke-width", 1.5)
+          .attr("d", line);
+
+        // Append circles (dots) for each data point.
+        svg
+          .selectAll(".dot")
+          .data(mergedData)
+          .enter()
+          .append("circle")
+          .attr("class", "dot")
+          .attr("cx", (d) => x(d.animeEpisode.episode_number))
+          .attr("cy", (d) => y(d.mangaChapterNumForPlot))
+          .attr("r", 2.5)
+          .attr("fill", (d) => colorScale(d.pace))
+          .attr("stroke", "none")
+          .attr("stroke-width", 0.5);
+
+        const infoPanel = d3.select("#info-panel");
+        let isMouseDown = false;
+
+        // Add a transparent rectangle for mouse events to enable continuous hover/drag.
+        svg
+          .append("rect")
+          .attr("class", "overlay")
+          .attr("width", width)
+          .attr("height", height)
+          .style("fill", "none")
+          .style("pointer-events", "all")
+          .on("mousedown", (event) => {
+            isMouseDown = true;
+            updateFocus(event); // Set initial focus on mousedown
+          })
+          .on("mousemove", (event) => {
+            if (isMouseDown) {
+              updateFocus(event);
+            }
+          });
+
+        // Listen for mouseup on the window to catch releases outside the SVG.
+        d3.select(window).on("mouseup", () => {
+          isMouseDown = false;
+        });
+
+        // Set initial focus on episode 1 when the chart loads.
+        if (mergedData.length > 0) {
+          const initialEpisode =
+            mergedData.find((d) => d.animeEpisode.episode_number === 1) ||
+            mergedData[0];
+          if (initialEpisode) {
+            // Simulate a mousemove event for the initial episode to display its details.
+            const initialX = x(initialEpisode.animeEpisode.episode_number);
+            updateFocus(
+              {
+                pageX: initialX + margin.left,
+                pageY: y(initialEpisode.mangaChapterNumForPlot) + margin.top,
+              },
+              initialEpisode
+            );
+          }
+        }
+
+        // Function to update the focus (highlight dot and display info) based on mouse position or initial load.
+        function updateFocus(event, dataPoint = null) {
+          let closestData = dataPoint;
+          if (!closestData) {
+            const [mx] = d3.pointer(event);
+            const hoveredAnimeEpisodeNumber = x.invert(mx);
+
+            // Find the closest data point based on the hovered anime episode number.
+            let minDistance = Infinity;
+
+            mergedData.forEach((d) => {
+              const distance = Math.abs(
+                d.animeEpisode.episode_number - hoveredAnimeEpisodeNumber
+              );
+              if (distance < minDistance) {
+                minDistance = distance;
+                closestData = d;
+              }
+            });
+          }
+
+          // Reset all dots to their default size and stroke.
+          svg.selectAll(".dot").attr("r", 2.5).attr("stroke-width", 0.5);
+
+          if (closestData) {
+            // Highlight the closest dot by increasing its radius and stroke width.
+            svg
+              .selectAll(".dot")
+              .filter(
+                (d) =>
+                  d.animeEpisode.episode_number ===
+                  closestData.animeEpisode.episode_number
+              )
+              .attr("r", 6)
+              .attr("stroke-width", 2);
+
+            // Determine Toei URL based on episode number (DB or DBZ).
+            let toeiUrl = "#";
+            const epNum = closestData.animeEpisode.episode_number;
+            if (epNum >= 1 && epNum <= 153) {
+                toeiUrl = `https://lineup.toei-anim.co.jp/ja/tv/dragon/episode/${epNum}/`;
+            } else if (epNum >= 154 && epNum <= 444) { // Assuming 444 is the last DBZ episode
+                const dbzEpNum = epNum - 153; // Adjust for DBZ episode numbering
+                toeiUrl = `https://lineup.toei-anim.co.jp/ja/tv/dragonz/episode/${dbzEpNum}/`;
+            }
+
+            // Prepare manga information for display.
+            let mangaInfo;
+            if (closestData.mangaChapters.length > 0) {
+              const mangaListHtml = closestData.mangaChapters
+                .map((mc) => {
+                  // Find the volume associated with the manga chapter to get Amazon URL.
+                  const volume = dbmainData.volumes.find((v) =>
+                    v.chapters.some(
+                      (c) => c.chapter_number === mc.chapter_number
+                    )
+                  );
+                  const amazonUrl = volume ? volume.amazon_url : "#";
+
+                  return `
+                                    <h3>漫画 ${mc.japanese_title} ${
+                    volume
+                      ? `<a href="${amazonUrl}" target="_blank">(Amazon)</a>`
+                      : ""
+                  }</h3>
+                                `;
+                })
+                .join("");
+              mangaInfo = `<div class="tooltip-section">${mangaListHtml}</div>`;
+            } else {
+              mangaInfo = `<div class="tooltip-section"><p>対応する漫画の話はありません（アニメオリジナル）。</p></div>`;
+            }
+
+            // Prepare anime title for display (remove extra space, add Z label).
+            let displayTitle = closestData.animeEpisode.title;
+
+            // Remove space after "第" (e.g., "第 1 話" -> "第1話").
+            displayTitle = displayTitle.replace(/^第\s*/, '第');
+
+            // Add "(Z)" label for Dragon Ball Z episodes.
+            if (epNum >= 154) {
+                displayTitle = `(Z) ${displayTitle}`;
+            }
+
+            // Update the info panel with all the gathered details.
+            infoPanel.html(
+              `
+                        <h3>アニメ ${displayTitle} <a href="${toeiUrl}" target="_blank">(東映アニメーション)</a></h3>
+                        <p>${closestData.animeEpisode.summary}</p>
+                        ${mangaInfo}
+                        <div class="tooltip-section">
+                            <p><strong>進行ペース:</strong> ${closestData.pace.toFixed(
+                              2
+                            )} 話/回</p>
+                        </div>
+                    `
+            );
+          }
+        }
+      }
+
+      loadData().then(({ mergedData, dbmainData }) =>
+        drawChart(mergedData, dbmainData)
+      );
+    </script>
+  </body>
+</html>
